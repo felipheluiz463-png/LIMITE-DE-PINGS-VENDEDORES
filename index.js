@@ -32,8 +32,8 @@ const LIMITED_USERS = new Set([
 ]);
 
 const DEFAULT_LIMITS = {
-  everyone: 1,
-  here: 3,
+  everyone: 2,
+  here: 2,
   stock: 2,
 };
 
