@@ -41,7 +41,7 @@ const DEFAULT_LIMITS = {
 const RESTRICT_ROLE_NAME = "Ping Restricted";
 const RESET_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const AUTO_DELETE_MS = 30 * 60 * 1000;       // 30 minutos
-const PING_MESSAGE_DELETE_MS = 10 * 60 * 1000; // 10 minutos para apagar mensagens de ping
+const STATUS_DELETE_MS = 10 * 60 * 1000;     // 10 minutos para mensagens de status
 
 const EMBED_COLOR = 0xb300ff;
 const FOOTER_TEXT = "🔥 𝙎𝙣𝙞𝙥𝙚𝙭ˡᵘᵃ ᶜᵒᵐᵐᵘⁿⁱᵗʸ 👻";
@@ -86,12 +86,12 @@ function isAllExhausted(userData) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Send an embed and schedule it to auto-delete after AUTO_DELETE_MS. */
-async function sendAutoDelete(channel, embed) {
+/** Send an embed and schedule it to auto-delete after specified delay */
+async function sendAutoDelete(channel, embed, delayMs = AUTO_DELETE_MS) {
   const sent = await channel.send({ embeds: [embed] });
   setTimeout(() => {
     sent.delete().catch(() => {});
-  }, AUTO_DELETE_MS);
+  }, delayMs);
   return sent;
 }
 
@@ -100,27 +100,11 @@ async function sendPersistent(channel, embed) {
   return channel.send({ embeds: [embed] });
 }
 
-/** Send a ping response message and delete it after PING_MESSAGE_DELETE_MS */
-async function sendTemporaryPingMessage(channel, embed) {
-  const sent = await channel.send({ embeds: [embed] });
-  setTimeout(() => {
-    sent.delete().catch(() => {});
-  }, PING_MESSAGE_DELETE_MS);
-  return sent;
-}
-
 // ─── Embeds ───────────────────────────────────────────────────────────────────
 
 /**
- * Add the footer image to any embed
- */
-function addFooterImage(embed) {
-  return embed.setImage(EMBED_IMAGE_URL);
-}
-
-/**
  * Status embed — sent after every valid ping use.
- * Shows current remaining quotas. Auto-deletes after 1 hour.
+ * Shows current remaining quotas. Auto-deletes after 10 minutes.
  */
 function makeStatusEmbed(userData) {
   const ev = userData.everyone;
@@ -137,14 +121,13 @@ function makeStatusEmbed(userData) {
     `Stock: **${st}/${DEFAULT_LIMITS.stock}**\n\n` +
     `⚠️ Quando todos os limites forem utilizados, suas permissões de marcação serão removidas automaticamente por 24 horas.`;
 
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("📢 Controle de Marcações")
-      .setDescription(description)
-      .setFooter({ text: FOOTER_TEXT })
-      .setTimestamp()
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle("📢 Controle de Marcações")
+    .setDescription(description)
+    .setImage(EMBED_IMAGE_URL) // Imagem adicionada aqui antes do rodapé
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
 }
 
 /**
@@ -160,17 +143,15 @@ function makeBlockedEmbed(type) {
   };
   const label = type ? labels[type] : "essa marcação";
 
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("🚫 Marcação Bloqueada")
-      .setDescription(
-        `Você não possui cota disponível para **${label}**.\n` +
-          `Sua mensagem foi removida.`
-      )
-      .setFooter({ text: FOOTER_TEXT })
-      .setTimestamp()
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle("🚫 Marcação Bloqueada")
+    .setDescription(
+      `Você não possui cota disponível para **${label}**.\n` +
+        `Sua mensagem foi removida.`
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
 }
 
 /**
@@ -178,23 +159,21 @@ function makeBlockedEmbed(type) {
  * Persistent (no auto-delete).
  */
 function makeAllExhaustedEmbed(userId) {
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("🚫 Todos os Limites Esgotados")
-      .setDescription(
-        `<@${userId}>, você utilizou **todos** os seus limites de marcação.\n\n` +
-          `Sua permissão para mencionar **@everyone**, **@here** e **@Stock** foi temporariamente removida.\n\n` +
-          `⏰ Seus limites serão restaurados automaticamente em **24 horas**.`
-      )
-      .addFields(
-        { name: "Everyone", value: `0/${DEFAULT_LIMITS.everyone}`, inline: true },
-        { name: "Here", value: `0/${DEFAULT_LIMITS.here}`, inline: true },
-        { name: "Stock", value: `0/${DEFAULT_LIMITS.stock}`, inline: true }
-      )
-      .setFooter({ text: FOOTER_TEXT })
-      .setTimestamp()
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle("🚫 Todos os Limites Esgotados")
+    .setDescription(
+      `<@${userId}>, você utilizou **todos** os seus limites de marcação.\n\n` +
+        `Sua permissão para mencionar **@everyone**, **@here** e **@Stock** foi temporariamente removida.\n\n` +
+        `⏰ Seus limites serão restaurados automaticamente em **24 horas**.`
+    )
+    .addFields(
+      { name: "Everyone", value: `0/${DEFAULT_LIMITS.everyone}`, inline: true },
+      { name: "Here", value: `0/${DEFAULT_LIMITS.here}`, inline: true },
+      { name: "Stock", value: `0/${DEFAULT_LIMITS.stock}`, inline: true }
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
 }
 
 /**
@@ -202,21 +181,19 @@ function makeAllExhaustedEmbed(userId) {
  * Persistent (no auto-delete).
  */
 function makeRestoredEmbed(userId) {
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("✅ Permissões Restauradas")
-      .setDescription(
-        `<@${userId}>, seus limites de marcação foram redefinidos e suas permissões foram restauradas.`
-      )
-      .addFields(
-        { name: "Everyone", value: `${DEFAULT_LIMITS.everyone}/${DEFAULT_LIMITS.everyone}`, inline: true },
-        { name: "Here", value: `${DEFAULT_LIMITS.here}/${DEFAULT_LIMITS.here}`, inline: true },
-        { name: "Stock", value: `${DEFAULT_LIMITS.stock}/${DEFAULT_LIMITS.stock}`, inline: true }
-      )
-      .setFooter({ text: FOOTER_TEXT })
-      .setTimestamp()
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle("✅ Permissões Restauradas")
+    .setDescription(
+      `<@${userId}>, seus limites de marcação foram redefinidos e suas permissões foram restauradas.`
+    )
+    .addFields(
+      { name: "Everyone", value: `${DEFAULT_LIMITS.everyone}/${DEFAULT_LIMITS.everyone}`, inline: true },
+      { name: "Here", value: `${DEFAULT_LIMITS.here}/${DEFAULT_LIMITS.here}`, inline: true },
+      { name: "Stock", value: `${DEFAULT_LIMITS.stock}/${DEFAULT_LIMITS.stock}`, inline: true }
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
 }
 
 /**
@@ -225,42 +202,15 @@ function makeRestoredEmbed(userId) {
  * Auto-deletes after 1 hour.
  */
 function makeFullyRestrictedEmbed(userId) {
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("🚫 Marcações Restritas")
-      .setDescription(
-        `<@${userId}>, você está temporariamente impedido de mencionar everyone, here ou cargos.\n` +
-          `Suas permissões serão restauradas automaticamente após 24 horas.`
-      )
-      .setFooter({ text: FOOTER_TEXT })
-      .setTimestamp()
-  );
-}
-
-/**
- * Embed para notificar que um ping de vendedor foi realizado com sucesso
- * Esta mensagem será apagada após 10 minutos
- */
-function makeSellerPingEmbed(userId, pingType) {
-  const pingLabels = {
-    everyone: "@everyone",
-    here: "@here",
-    stock: "@Stock"
-  };
-  
-  const label = pingLabels[pingType] || pingType;
-  
-  return addFooterImage(
-    new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setTitle("📢 Ping de Vendedor")
-      .setDescription(
-        `<@${userId}> realizou um ping **${label}** com sucesso!`
-      )
-      .setFooter({ text: `${FOOTER_TEXT} • Esta mensagem será apagada em 10 minutos` })
-      .setTimestamp()
-  );
+  return new EmbedBuilder()
+    .setColor(EMBED_COLOR)
+    .setTitle("🚫 Marcações Restritas")
+    .setDescription(
+      `<@${userId}>, você está temporariamente impedido de mencionar everyone, here ou cargos.\n` +
+        `Suas permissões serão restauradas automaticamente após 24 horas.`
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
 }
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
@@ -475,29 +425,14 @@ client.on("messageCreate", async (message) => {
 
   if (alreadyExhaustedTypes.length > 0) {
     try { await message.delete(); } catch {}
-    // Mostra o embed de status com os limites atuais (auto-deleta em 30min)
+    // Mostra o embed de status com os limites atuais (auto-deleta em 10 MINUTOS)
     try {
-      await sendAutoDelete(message.channel, makeStatusEmbed(userData));
+      await sendAutoDelete(message.channel, makeStatusEmbed(userData), STATUS_DELETE_MS);
     } catch {}
     return;
   }
 
-  // ── Envia mensagem temporária de ping do vendedor (apaga em 10 minutos) ──
-  try {
-    if (hasEveryone) {
-      await sendTemporaryPingMessage(message.channel, makeSellerPingEmbed(message.author.id, "everyone"));
-    }
-    if (hasHere) {
-      await sendTemporaryPingMessage(message.channel, makeSellerPingEmbed(message.author.id, "here"));
-    }
-    if (hasStock) {
-      await sendTemporaryPingMessage(message.channel, makeSellerPingEmbed(message.author.id, "stock"));
-    }
-  } catch (err) {
-    console.error("[PingBot] Erro ao enviar mensagem de ping:", err.message);
-  }
-
-  // ── Decrementar cotas válidas ─────────────────────────────────────────────
+  // ── Decrementar cotas válidas (sem enviar embed extra) ───────────────────
   if (hasEveryone) userData.everyone--;
   if (hasHere) userData.here--;
   if (hasStock) userData.stock--;
